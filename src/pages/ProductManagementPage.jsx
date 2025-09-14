@@ -22,7 +22,8 @@ const ProductManagementPage = () => {
     code: '',
     brand: '',
     category: '',
-    price: '',
+    costPrice: '', // Precio de costo (lo que paga al proveedor)
+    price: '', // Precio de venta (lo que cobra a los clientes)
     stock: '',
     providerId: '',
     minStock: '',
@@ -36,6 +37,7 @@ const ProductManagementPage = () => {
       code: '',
       brand: '',
       category: '',
+      costPrice: '',
       price: '',
       stock: '',
       providerId: '',
@@ -51,6 +53,7 @@ const ProductManagementPage = () => {
         code: product.code,
         brand: product.brand,
         category: product.category,
+        costPrice: product.costPrice || product.price, // Si no tiene costPrice, usar price
         price: product.price,
         stock: product.stock,
         providerId: product.providerId,
@@ -69,7 +72,13 @@ const ProductManagementPage = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const productData = { ...formData, price: parseFloat(formData.price), stock: parseInt(formData.stock), minStock: parseInt(formData.minStock) };
+    const productData = { 
+      ...formData, 
+      costPrice: parseFloat(formData.costPrice), 
+      price: parseFloat(formData.price), 
+      stock: parseInt(formData.stock), 
+      minStock: parseInt(formData.minStock) 
+    };
     if (editingProduct) {
       updateProduct(editingProduct.id, productData);
     } else {
@@ -81,6 +90,12 @@ const ProductManagementPage = () => {
   const getProviderName = (providerId) => {
     const provider = providers.find(p => p.id === providerId);
     return provider ? provider.companyName : 'Desconocido';
+  };
+
+  // Calcular margen de ganancia
+  const calculateMargin = (costPrice, sellingPrice) => {
+    if (costPrice <= 0) return 0;
+    return ((sellingPrice - costPrice) / costPrice) * 100;
   };
 
   const filteredProducts = useMemo(() => {
@@ -150,7 +165,9 @@ const ProductManagementPage = () => {
             <th>Código</th>
             <th>Marca</th>
             <th>Categoría</th>
+            <th>Precio Costo</th>
             <th>Precio Venta</th>
+            <th>Margen</th>
             <th>Stock</th>
             <th>Proveedor</th>
             <th>Acciones</th>
@@ -163,7 +180,11 @@ const ProductManagementPage = () => {
               <td>{product.code}</td>
               <td>{product.brand}</td>
               <td>{product.category}</td>
+              <td>${(product.costPrice || product.price).toFixed(2)}</td>
               <td>${product.price.toFixed(2)}</td>
+              <td>
+                {calculateMargin(product.costPrice || product.price, product.price).toFixed(1)}%
+              </td>
               <td>
                 {product.stock}
                 {product.stock < product.minStock && (
@@ -239,7 +260,22 @@ const ProductManagementPage = () => {
               />
             </Form.Group>
             <Form.Group className="mb-3">
-              <Form.Label>Precio de Venta</Form.Label>
+              <Form.Label>Precio de Costo (Proveedor)</Form.Label>
+              <Form.Control
+                type="number"
+                name="costPrice"
+                value={formData.costPrice}
+                onChange={handleChange}
+                step="0.01"
+                required
+                disabled={!isAdministrator} // Added disabled prop
+              />
+              <Form.Text className="text-muted">
+                El precio que pagas al proveedor
+              </Form.Text>
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Precio de Venta (Clientes)</Form.Label>
               <Form.Control
                 type="number"
                 name="price"
@@ -249,6 +285,9 @@ const ProductManagementPage = () => {
                 required
                 disabled={!isAdministrator} // Added disabled prop
               />
+              <Form.Text className="text-muted">
+                El precio al que vendes a tus clientes
+              </Form.Text>
             </Form.Group>
             <Form.Group className="mb-3">
               <Form.Label>Stock Actual</Form.Label>

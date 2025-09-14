@@ -1,16 +1,40 @@
-import React, { useContext, useMemo } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
 import ProductContext from '../contexts/ProductContext';
 import OrderContext from '../contexts/OrderContext';
 import SaleContext from '../contexts/SaleContext';
 import ProviderContext from '../contexts/ProviderContext';
-import { Card, Row, Col, ListGroup, Badge } from 'react-bootstrap';
-import { FaBoxOpen, FaDollarSign, FaShoppingCart, FaExclamationTriangle, FaTruck, FaStar } from 'react-icons/fa';
+import { Card, Row, Col, ListGroup, Badge, ProgressBar } from 'react-bootstrap';
+import { 
+  FaBoxOpen, 
+  FaDollarSign, 
+  FaShoppingCart, 
+  FaExclamationTriangle, 
+  FaTruck, 
+  FaStar, 
+  FaArrowUp, 
+  FaArrowDown,
+  FaChartLine,
+  FaMoneyBillWave,
+  FaPercentage,
+  FaClock,
+  FaCheckCircle
+} from 'react-icons/fa';
 
 const DashboardPage = () => {
   const { products } = useContext(ProductContext);
   const { orders } = useContext(OrderContext);
   const { sales } = useContext(SaleContext);
   const { providers } = useContext(ProviderContext);
+  const [selectedPeriod, setSelectedPeriod] = useState('7d'); // '7d', '30d', '90d'
+
+  // Calcular ventas de períodos anteriores para comparativas
+  const calculateSalesForPeriod = (days) => {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    
+    return sales.filter(sale => new Date(sale.date) >= startDate)
+                .reduce((sum, sale) => sum + sale.total, 0);
+  };
 
   // RF6: Total de productos en inventario
   const totalProducts = useMemo(() => products.filter(p => p.isActive).length, [products]);
@@ -26,6 +50,21 @@ const DashboardPage = () => {
     return sales.filter(sale => sale.date === today)
                 .reduce((sum, sale) => sum + sale.total, 0);
   }, [sales]);
+
+  // Ventas de ayer para comparativa
+  const salesYesterday = useMemo(() => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayString = yesterday.toISOString().split('T')[0];
+    return sales.filter(sale => sale.date === yesterdayString)
+                .reduce((sum, sale) => sum + sale.total, 0);
+  }, [sales]);
+
+  // Calcular tendencia de ventas
+  const salesTrend = useMemo(() => {
+    if (salesYesterday === 0) return 0;
+    return ((salesToday - salesYesterday) / salesYesterday) * 100;
+  }, [salesToday, salesYesterday]);
 
   // RF6: Productos con bajo stock (lista con nombres y cantidades)
   const lowStockProducts = useMemo(() => {
@@ -71,25 +110,33 @@ const DashboardPage = () => {
   }, [sales, products]);
 
   // RF6: Gráfico: Barras horizontales o verticales: ventas por día (últimos 7 días).
-  // For simplicity, we'll just list daily sales for now. A real chart would use a library like Chart.js
   const dailySales = useMemo(() => {
     const salesByDay = {};
-    for (let i = 0; i < 7; i++) {
+    const maxSales = { date: '', total: 0 };
+    
+    // Inicializar los últimos 7 días
+    for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const dateString = d.toISOString().split('T')[0];
       salesByDay[dateString] = 0;
     }
 
+    // Calcular ventas por día
     sales.forEach(sale => {
       if (salesByDay.hasOwnProperty(sale.date)) {
         salesByDay[sale.date] += sale.total;
+        if (salesByDay[sale.date] > maxSales.total) {
+          maxSales.total = salesByDay[sale.date];
+          maxSales.date = sale.date;
+        }
       }
     });
 
-    return Object.keys(salesByDay).sort().map(date => ({
+    return Object.keys(salesByDay).map(date => ({
       date,
       total: salesByDay[date],
+      percentage: maxSales.total > 0 ? (salesByDay[date] / maxSales.total) * 100 : 0
     }));
   }, [sales]);
 
@@ -99,122 +146,295 @@ const DashboardPage = () => {
 
     // Add recent sales
     sales.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5).forEach(sale => {
-      activities.push(`Venta de ${sale.products.length} productos por ${sale.total.toFixed(2)} (${sale.date})`);
+      activities.push({
+        type: 'sale',
+        description: `Venta de ${sale.products.length} productos por ${sale.total.toFixed(2)}`,
+        date: sale.date,
+        amount: sale.total
+      });
     });
 
     // Add recent orders
     orders.sort((a, b) => new Date(b.receptionDate) - new Date(a.receptionDate)).slice(0, 5).forEach(order => {
       const provider = providers.find(p => p.id === order.providerId);
-      activities.push(`Nuevo pedido de ${order.products.length} productos a ${provider ? provider.companyName : 'Proveedor Desconocido'} (${order.receptionDate})`);
+      activities.push({
+        type: 'order',
+        description: `Nuevo pedido de ${order.products.length} productos a ${provider ? provider.companyName : 'Proveedor Desconocido'}`,
+        date: order.receptionDate
+      });
     });
 
     // Sort all activities by date (most recent first) and take top 5
-    return activities.sort((a, b) => {
-      const dateA = new Date(a.match(/\((\d{4}-\d{2}-\d{2})\)/)?.[1] || '1970-01-01');
-      const dateB = new Date(b.match(/\((\d{4}-\d{2}-\d{2})\)/)?.[1] || '1970-01-01');
-      return dateB - dateA;
-    }).slice(0, 5);
+    return activities.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
   }, [sales, orders, providers]);
 
+  // Calcular métricas financieras avanzadas
+  const financialMetrics = useMemo(() => {
+    // Calcular costo estimado de productos (usando costPrice si está disponible)
+    const totalCost = products.reduce((sum, product) => {
+      const costPrice = product.costPrice || product.price;
+      return sum + (costPrice * product.stock);
+    }, 0);
+    
+    const totalRevenue = sales.reduce((sum, sale) => sum + sale.total, 0);
+    const estimatedProfit = totalRevenue - totalCost;
+    const profitMargin = totalRevenue > 0 ? (estimatedProfit / totalRevenue) * 100 : 0;
+    
+    return {
+      totalCost,
+      totalRevenue,
+      estimatedProfit,
+      profitMargin
+    };
+  }, [products, sales]);
+
+  // Ventas por período seleccionado
+  const periodSales = useMemo(() => {
+    switch(selectedPeriod) {
+      case '7d': return calculateSalesForPeriod(7);
+      case '30d': return calculateSalesForPeriod(30);
+      case '90d': return calculateSalesForPeriod(90);
+      default: return calculateSalesForPeriod(7);
+    }
+  }, [selectedPeriod, sales]);
+
+  // Calcular ventas del período anterior para comparativa
+  const previousPeriodSales = useMemo(() => {
+    switch(selectedPeriod) {
+      case '7d': return calculateSalesForPeriod(14) - calculateSalesForPeriod(7);
+      case '30d': return calculateSalesForPeriod(60) - calculateSalesForPeriod(30);
+      case '90d': return calculateSalesForPeriod(180) - calculateSalesForPeriod(90);
+      default: return calculateSalesForPeriod(14) - calculateSalesForPeriod(7);
+    }
+  }, [selectedPeriod, sales]);
+
+  // Calcular tendencia del período
+  const periodTrend = useMemo(() => {
+    if (previousPeriodSales === 0) return 0;
+    return ((periodSales - previousPeriodSales) / previousPeriodSales) * 100;
+  }, [periodSales, previousPeriodSales]);
 
   return (
     <div className="container mt-4">
-      <h1 className="mb-4">Dashboard</h1>
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h1>Dashboard</h1>
+        <div className="d-flex align-items-center">
+          <span className="me-2">Período:</span>
+          <select 
+            className="form-select form-select-sm" 
+            value={selectedPeriod}
+            onChange={(e) => setSelectedPeriod(e.target.value)}
+            style={{ width: 'auto' }}
+          >
+            <option value="7d">7 días</option>
+            <option value="30d">30 días</option>
+            <option value="90d">90 días</option>
+          </select>
+        </div>
+      </div>
 
+      {/* Resumen Ejecutivo */}
       <Row className="mb-4">
         <Col md={3}>
-          <Card className="text-center shadow-sm">
+          <Card className="text-center shadow-sm border-primary">
             <Card.Body>
-              <FaBoxOpen size={40} className="text-primary mb-3" />
-              <Card.Title>Total Productos</Card.Title>
-              <Card.Text className="fs-3">{totalProducts}</Card.Text>
+              <FaShoppingCart size={30} className="text-primary mb-2" />
+              <Card.Title className="fs-6">Ventas {selectedPeriod === '7d' ? '7 días' : selectedPeriod === '30d' ? '30 días' : '90 días'}</Card.Title>
+              <Card.Text className="fs-4 fw-bold">${periodSales.toFixed(2)}</Card.Text>
+              <div className={`d-flex align-items-center justify-content-center small ${periodTrend >= 0 ? 'text-success' : 'text-danger'}`}>
+                {periodTrend >= 0 ? <FaArrowUp className="me-1" /> : <FaArrowDown className="me-1" />}
+                {Math.abs(periodTrend).toFixed(1)}% vs. período anterior
+              </div>
             </Card.Body>
           </Card>
         </Col>
         <Col md={3}>
-          <Card className="text-center shadow-sm">
+          <Card className="text-center shadow-sm border-success">
             <Card.Body>
-              <FaDollarSign size={40} className="text-success mb-3" />
-              <Card.Title>Valor Inventario</Card.Title>
-              <Card.Text className="fs-3">${totalInventoryValue.toFixed(2)}</Card.Text>
+              <FaMoneyBillWave size={30} className="text-success mb-2" />
+              <Card.Title className="fs-6">Ganancia Estimada</Card.Title>
+              <Card.Text className="fs-4 fw-bold">${financialMetrics.estimatedProfit.toFixed(2)}</Card.Text>
+              <div className="d-flex align-items-center justify-content-center small text-success">
+                <FaPercentage className="me-1" />
+                {financialMetrics.profitMargin.toFixed(1)}% margen
+              </div>
             </Card.Body>
           </Card>
         </Col>
         <Col md={3}>
-          <Card className="text-center shadow-sm">
+          <Card className="text-center shadow-sm border-info">
             <Card.Body>
-              <FaShoppingCart size={40} className="text-info mb-3" />
-              <Card.Title>Ventas del Día</Card.Title>
-              <Card.Text className="fs-3">${salesToday.toFixed(2)}</Card.Text>
+              <FaBoxOpen size={30} className="text-info mb-2" />
+              <Card.Title className="fs-6">Total Productos</Card.Title>
+              <Card.Text className="fs-4 fw-bold">{totalProducts}</Card.Text>
+              <div className="small text-muted">{lowStockProducts.length} con bajo stock</div>
             </Card.Body>
           </Card>
         </Col>
         <Col md={3}>
-          <Card className="text-center shadow-sm">
+          <Card className="text-center shadow-sm border-warning">
             <Card.Body>
-              <FaExclamationTriangle size={40} className="text-warning mb-3" />
-              <Card.Title>Productos Bajo Stock</Card.Title>
-              <Card.Text className="fs-3">{lowStockProducts.length}</Card.Text>
+              <FaDollarSign size={30} className="text-warning mb-2" />
+              <Card.Title className="fs-6">Valor Inventario</Card.Title>
+              <Card.Text className="fs-4 fw-bold">${totalInventoryValue.toFixed(2)}</Card.Text>
+              <div className="small text-muted">Costo estimado: ${(financialMetrics.totalCost).toFixed(2)}</div>
             </Card.Body>
           </Card>
         </Col>
       </Row>
 
+      {/* Gráfico de Ventas y Métricas Clave */}
+      <Row className="mb-4">
+        <Col md={8}>
+          <Card className="shadow-sm h-100">
+            <Card.Header className="d-flex justify-content-between align-items-center">
+              <span><FaChartLine className="me-2" />Ventas por Día (Últimos 7 Días)</span>
+              <small className="text-muted">Hoy: ${salesToday.toFixed(2)}</small>
+            </Card.Header>
+            <Card.Body>
+              {dailySales.map((day, index) => (
+                <div key={day.date} className="mb-3">
+                  <div className="d-flex justify-content-between">
+                    <span className="small">{day.date}</span>
+                    <span className="small fw-bold">${day.total.toFixed(2)}</span>
+                  </div>
+                  <ProgressBar 
+                    now={day.percentage} 
+                    variant={day.total > 0 ? "primary" : "secondary"} 
+                    style={{ height: '10px' }}
+                    className="mt-1"
+                  />
+                </div>
+              ))}
+              <div className="d-flex justify-content-between small text-muted mt-2">
+                <div>
+                  Tendencia hoy: 
+                  <span className={`ms-1 ${salesTrend >= 0 ? 'text-success' : 'text-danger'}`}>
+                    {salesTrend >= 0 ? <FaArrowUp className="me-1" /> : <FaArrowDown className="me-1" />}
+                    {Math.abs(salesTrend).toFixed(1)}%
+                  </span>
+                </div>
+                <div>
+                  Mejor día: ${Math.max(...dailySales.map(d => d.total)).toFixed(2)}
+                </div>
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+        <Col md={4}>
+          <Card className="shadow-sm h-100">
+            <Card.Header>Estadísticas Clave</Card.Header>
+            <ListGroup variant="flush">
+              <ListGroup.Item>
+                <div className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <FaTruck className="me-2 text-primary" /> 
+                    <span className="fw-medium">Proveedor Más Usado</span>
+                  </div>
+                  <Badge bg="primary" className="text-truncate" style={{ maxWidth: '120px' }}>
+                    {mostUsedProvider ? mostUsedProvider.companyName : 'N/A'}
+                  </Badge>
+                </div>
+              </ListGroup.Item>
+              <ListGroup.Item>
+                <div className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <FaStar className="me-2 text-warning" /> 
+                    <span className="fw-medium">Producto Más Vendido</span>
+                  </div>
+                  <Badge bg="warning" className="text-dark text-truncate" style={{ maxWidth: '120px' }}>
+                    {mostSoldProduct ? mostSoldProduct.name : 'N/A'}
+                  </Badge>
+                </div>
+              </ListGroup.Item>
+              <ListGroup.Item>
+                <div className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <FaExclamationTriangle className="me-2 text-danger" /> 
+                    <span className="fw-medium">Productos Bajo Stock</span>
+                  </div>
+                  <Badge bg={lowStockProducts.length > 0 ? "danger" : "success"}>
+                    {lowStockProducts.length}
+                  </Badge>
+                </div>
+              </ListGroup.Item>
+              <ListGroup.Item>
+                <div className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <FaChartLine className="me-2 text-info" /> 
+                    <span className="fw-medium">Tendencia Ventas</span>
+                  </div>
+                  <Badge bg={salesTrend >= 0 ? "success" : "danger"}>
+                    {salesTrend >= 0 ? <FaArrowUp className="me-1" /> : <FaArrowDown className="me-1" />}
+                    {Math.abs(salesTrend).toFixed(1)}%
+                  </Badge>
+                </div>
+              </ListGroup.Item>
+            </ListGroup>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Productos con Bajo Stock y Actividad Reciente */}
       <Row className="mb-4">
         <Col md={6}>
-          <Card className="shadow-sm">
-            <Card.Header>Productos con Bajo Stock</Card.Header>
+          <Card className="shadow-sm h-100">
+            <Card.Header className="d-flex justify-content-between align-items-center">
+              <span><FaExclamationTriangle className="me-2 text-danger" />Productos con Bajo Stock</span>
+              <Badge bg={lowStockProducts.length > 0 ? "danger" : "success"}>
+                {lowStockProducts.length}
+              </Badge>
+            </Card.Header>
             <ListGroup variant="flush">
               {lowStockProducts.length > 0 ? (
                 lowStockProducts.map(product => (
                   <ListGroup.Item key={product.id} className="d-flex justify-content-between align-items-center">
-                    {product.name}
-                    <Badge bg="danger">{product.stock} unidades</Badge>
+                    <div className="text-truncate" style={{ maxWidth: '70%' }}>
+                      {product.name}
+                    </div>
+                    <div className="d-flex align-items-center">
+                      <Badge bg="danger" className="me-2">{product.stock}</Badge>
+                      <span className="small text-muted">mín: {product.minStock}</span>
+                    </div>
                   </ListGroup.Item>
                 ))
               ) : (
-                <ListGroup.Item>No hay productos con bajo stock.</ListGroup.Item>
+                <ListGroup.Item className="text-center text-success">
+                  <FaCheckCircle className="me-2" />¡Todos los productos tienen stock suficiente!
+                </ListGroup.Item>
               )}
             </ListGroup>
           </Card>
         </Col>
         <Col md={6}>
-          <Card className="shadow-sm">
-            <Card.Header>Estadísticas Clave</Card.Header>
-            <ListGroup variant="flush">
-              <ListGroup.Item>
-                <FaTruck className="me-2" /> Proveedor Más Usado: {mostUsedProvider ? mostUsedProvider.companyName : 'N/A'}
-              </ListGroup.Item>
-              <ListGroup.Item>
-                <FaStar className="me-2" /> Producto Más Vendido (últimos 7 días): {mostSoldProduct ? mostSoldProduct.name : 'N/A'}
-              </ListGroup.Item>
-            </ListGroup>
-          </Card>
-          <Card className="shadow-sm mt-3">
-            <Card.Header>Ventas por Día (Últimos 7 Días)</Card.Header>
-            <ListGroup variant="flush">
-              {dailySales.map(day => (
-                <ListGroup.Item key={day.date} className="d-flex justify-content-between align-items-center">
-                  {day.date}
-                  <Badge bg="primary">${day.total.toFixed(2)}</Badge>
-                </ListGroup.Item>
-              ))}
-            </ListGroup>
-          </Card>
-        </Col>
-      </Row>
-
-      <Row>
-        <Col>
-          <Card className="shadow-sm">
-            <Card.Header>Actividad Reciente</Card.Header>
+          <Card className="shadow-sm h-100">
+            <Card.Header><FaClock className="me-2" />Actividad Reciente</Card.Header>
             <ListGroup variant="flush">
               {recentActivity.length > 0 ? (
                 recentActivity.map((activity, index) => (
-                  <ListGroup.Item key={index}>{activity}</ListGroup.Item>
+                  <ListGroup.Item key={index} className="d-flex justify-content-between align-items-start">
+                    <div className="flex-grow-1">
+                      <div className="d-flex align-items-center mb-1">
+                        {activity.type === 'sale' ? (
+                          <FaShoppingCart className="text-success me-2" />
+                        ) : (
+                          <FaTruck className="text-primary me-2" />
+                        )}
+                        <span className="small fw-medium">{activity.description}</span>
+                      </div>
+                      <small className="text-muted">{activity.date}</small>
+                    </div>
+                    {activity.amount && (
+                      <Badge bg={activity.type === 'sale' ? "success" : "primary"}>
+                        ${activity.amount.toFixed(2)}
+                      </Badge>
+                    )}
+                  </ListGroup.Item>
                 ))
               ) : (
-                <ListGroup.Item>No hay actividad reciente.</ListGroup.Item>
+                <ListGroup.Item className="text-center text-muted">
+                  No hay actividad reciente.
+                </ListGroup.Item>
               )}
             </ListGroup>
           </Card>

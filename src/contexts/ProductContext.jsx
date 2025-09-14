@@ -9,7 +9,8 @@ const initialProducts = [
     code: 'PROD001',
     brand: 'ABC Electronics',
     category: 'Electrónica',
-    price: 25.99,
+    costPrice: 20.00, // Precio de costo (lo que paga el dueño al proveedor)
+    price: 25.99, // Precio de venta (lo que cobra el dueño a los clientes)
     stock: 15,
     providerId: '1',
     minStock: 5,
@@ -21,7 +22,8 @@ const initialProducts = [
     code: 'PROD002',
     brand: 'XYZ Accesorios',
     category: 'Accesorios',
-    price: 12.50,
+    costPrice: 8.00, // Precio de costo
+    price: 12.50, // Precio de venta
     stock: 8,
     providerId: '2',
     minStock: 3,
@@ -33,7 +35,8 @@ const initialProducts = [
     code: 'PROD003',
     brand: 'ABC Electronics',
     category: 'Electrónica',
-    price: 75.00,
+    costPrice: 60.00, // Precio de costo
+    price: 75.00, // Precio de venta
     stock: 4,
     providerId: '1',
     minStock: 5,

@@ -76,7 +76,7 @@ const SalesSystemPage = () => {
       productId: item.id,
       name: item.name,
       quantity: item.quantity,
-      price: item.price,
+      price: item.price, // Precio de venta
     }));
 
     const newSale = {
@@ -135,7 +135,7 @@ const SalesSystemPage = () => {
                   <tr>
                     <th>Nombre</th>
                     <th>Código</th>
-                    <th>Precio</th>
+                    <th>Precio Venta</th>
                     <th>Stock</th>
                     <th>Acción</th>
                   </tr>
